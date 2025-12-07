@@ -11,6 +11,12 @@ EditorBuildSettings:
   - enabled: 1
     path: Assets/Scenes/LoggingPage.unity
     guid: 77ef148171886cd419f89561d793b849
+  - enabled: 1
+    path: Assets/Scenes/Dashboard.unity
+    guid: ea74f20f81ad60c4eba57efcdaca3942
+  - enabled: 1
+    path: Assets/Scenes/TransactionPage.unity
+    guid: 95fa03208bba8944a8963b093a285acd
   m_configObjects:
     com.unity.input.settings.actions: {fileID: -944628639613478452, guid: 2bcd2660ca9b64942af0de543d8d7100, type: 3}
   m_UseUCBPForAssetBundles: 0

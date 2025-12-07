@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "921753287732",
+    "project_id": "local-finance-d9c27",
+    "storage_bucket": "local-finance-d9c27.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:921753287732:android:689e29e526cb964b55de61",
+        "android_client_info": {
+          "package_name": "com.company.localfinance"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBej_Idb14gkgKr76dKbZoCJ4b8f2Q8kdI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

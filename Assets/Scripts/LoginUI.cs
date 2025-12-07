@@ -3,6 +3,8 @@ using TMPro;
 using Firebase;
 using Firebase.Auth;
 using System.Collections;
+using UnityEngine.SceneManagement;
+
 
 public class LoginUI : MonoBehaviour
 {
@@ -53,8 +55,8 @@ public class LoginUI : MonoBehaviour
         errorText.text = "Login Successful!";
         errorText.color = Color.green;
 
-        // TODO → Load your Home scene
-        // SceneManager.LoadScene("HomePage");
+        // Load Dashboard scene after successful login
+        SceneManager.LoadScene("Dashboard");
     }
 
     private string FirebaseErrorMessage(AuthError errorCode)
