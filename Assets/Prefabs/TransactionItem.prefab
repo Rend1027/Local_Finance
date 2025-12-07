@@ -14,6 +14,7 @@ GameObject:
   - component: {fileID: 1137103304956304315}
   - component: {fileID: 5878817199503215072}
   - component: {fileID: 5351850070118864824}
+  - component: {fileID: 6961978210995362374}
   m_Layer: 5
   m_Name: TransactionItem
   m_TagString: Untagged
@@ -146,6 +147,21 @@ MonoBehaviour:
   m_FlexibleWidth: 1
   m_FlexibleHeight: -1
   m_LayoutPriority: 1
+--- !u!114 &6961978210995362374
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 328525712466815650}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 04783186bc9e85a43b78702ab70a3967, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::TransactionItemUI
+  DocumentId: 
+  EditButton: {fileID: 358724982649719343}
+  DeleteButton: {fileID: 8949921827959190657}
 --- !u!1 &578832071640752078
 GameObject:
   m_ObjectHideFlags: 0

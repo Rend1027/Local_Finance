@@ -1,6 +1,10 @@
 using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
 using UnityEngine;
 using TMPro;
+using Firebase.Auth;
+using Firebase.Firestore;
 
 public class DashboardController : MonoBehaviour
 {
@@ -10,28 +14,93 @@ public class DashboardController : MonoBehaviour
     public TMP_Text netProfitValueText;
 
     [Header("Prefabs")]
-    public GameObject transactionItemPrefab;
-    public GameObject categoryItemPrefab;   // used for both expenses & income
+    public GameObject transactionItemPrefab;   // recent transactions (read-only card)
+    public GameObject categoryItemPrefab;      // for top expenses + income sources
 
     [Header("List Parents")]
-    public Transform transactionsContent;
+    public Transform transactionsContent;      // recent 5
     public Transform topExpensesContent;
     public Transform incomeSourcesContent;
 
-    private void OnEnable()
+    private FirebaseFirestore db;
+    private FirebaseAuth auth;
+
+    private void Awake()
     {
-        PopulateSummary();
-        PopulateRecentTransactions();
-        PopulateTopExpenses();
-        PopulateIncomeSources();
+        db = FirebaseFirestore.DefaultInstance;
+        auth = FirebaseAuth.DefaultInstance;
     }
 
-    void PopulateSummary()
+    private void OnEnable()
     {
-        float income = 10000f;
-        float expenses = 5000f;
-        float net = income - expenses;
+        _ = LoadAndPopulateAsync();
+    }
 
+
+    // MAIN LOADER
+    private async Task LoadAndPopulateAsync()
+    {
+        ClearChildren(transactionsContent);
+        ClearChildren(topExpensesContent);
+        ClearChildren(incomeSourcesContent);
+
+        var user = auth.CurrentUser;
+        if (user == null)
+        {
+            Debug.LogWarning("DashboardController: No logged-in user.");
+            PopulateSummary(0f, 0f);
+            return;
+        }
+
+        List<TransactionModel> allTx = new List<TransactionModel>();
+
+        try
+        {
+            // Load ALL transactions for calculations
+            QuerySnapshot allSnapshot = await db
+                .Collection("users")
+                .Document(user.UserId)
+                .Collection("transactions")
+                .OrderByDescending("Timestamp")
+                .GetSnapshotAsync();
+
+            foreach (var doc in allSnapshot.Documents)
+            {
+                allTx.Add(doc.ConvertTo<TransactionModel>());
+            }
+
+
+            // Populate Summary (income, expenses, net)
+            float incomeTotal = allTx.Where(t => t.IsIncome)
+                                     .Sum(t => t.Amount);
+
+            float expensesTotal = allTx.Where(t => !t.IsIncome)
+                                       .Sum(t => Mathf.Abs(t.Amount));
+
+            PopulateSummary(incomeTotal, expensesTotal);
+
+
+            // Recent Transactions — ONLY TOP 5
+            var recent = allTx.Take(5).ToList();
+
+            foreach (var tx in recent)
+                CreateDashboardTransactionItem(tx);
+
+
+            // TOP EXPENSES + INCOME SOURCES
+            PopulateTopExpenses(allTx);
+            PopulateIncomeSources(allTx);
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogError($"DashboardController: Failed Firestore load: {e}");
+        }
+    }
+
+    // UI HELPERS
+    void PopulateSummary(float income, float expenses)
+    {
+        float net = income - expenses;
         incomeValueText.text = "$" + income.ToString("N2");
         expensesValueText.text = "$" + expenses.ToString("N2");
         netProfitValueText.text = "$" + net.ToString("N2");
@@ -40,93 +109,88 @@ public class DashboardController : MonoBehaviour
     void ClearChildren(Transform parent)
     {
         foreach (Transform child in parent)
-        {
             Destroy(child.gameObject);
-        }
     }
 
-    void PopulateRecentTransactions()
+    // Recent Transactions (read-only card)
+    void CreateDashboardTransactionItem(TransactionModel tx)
     {
-        ClearChildren(transactionsContent);
+        GameObject go = Instantiate(transactionItemPrefab, transactionsContent);
 
-        var txs = new List<(string title, string desc, float amount, bool isIncome)>
-        {
-            ("Food supply", "Ingredients - 11/18/2025", -100f, false),
-            ("Daily pizza sales", "Sales - 11/18/2025", 2000f, true),
-            ("Catering", "Ingredients - 11/18/2025", 500f, true)
-        };
+        go.transform.Find("LeftBlock/TextBlock/Title")
+            .GetComponent<TMP_Text>().text = tx.Title;
 
-        foreach (var tx in txs)
-        {
-            GameObject go = Instantiate(transactionItemPrefab, transactionsContent);
+        go.transform.Find("LeftBlock/TextBlock/Description")
+            .GetComponent<TMP_Text>().text = tx.Description;
 
-            var titleText = go.transform.Find("TextBlock/Title").GetComponent<TMP_Text>();
-            var descText = go.transform.Find("TextBlock/Description").GetComponent<TMP_Text>();
-            var amountText = go.transform.Find("AmountContainer/Amount").GetComponent<TMP_Text>();
-            var statusDotImage = go.transform.Find("StatusDot").GetComponent<UnityEngine.UI.Image>();
+        string sign = tx.Amount >= 0 ? "+" : "-";
+        go.transform.Find("RightBlock/AmountContainer/Amount")
+            .GetComponent<TMP_Text>().text =
+            sign + Mathf.Abs(tx.Amount).ToString("N2");
 
-            titleText.text = tx.title;
-            descText.text = tx.desc;
+        Color c = tx.IsIncome ? Color.green : Color.red;
+        go.transform.Find("RightBlock/AmountContainer/Amount")
+            .GetComponent<TMP_Text>().color = c;
 
-            string sign = tx.amount >= 0 ? "+" : "-";
-            amountText.text = sign + Mathf.Abs(tx.amount).ToString("N2");
-
-            if (tx.isIncome)
-            {
-                amountText.color = Color.green;
-                statusDotImage.color = Color.green;
-            }
-            else
-            {
-                amountText.color = Color.red;
-                statusDotImage.color = Color.red;
-            }
-        }
+        go.transform.Find("LeftBlock/StatusDot")
+            .GetComponent<UnityEngine.UI.Image>().color = c;
     }
 
-    void PopulateTopExpenses()
+    // TOP EXPENSES
+    void PopulateTopExpenses(List<TransactionModel> allTx)
     {
+        var expenses = allTx.Where(t => !t.IsIncome && !string.IsNullOrEmpty(t.Category));
+
+        var grouped = expenses
+            .GroupBy(t => t.Category)
+            .Select(g => new
+            {
+                Category = g.Key,
+                Total = g.Sum(x => Mathf.Abs(x.Amount))
+            })
+            .OrderByDescending(x => x.Total)
+            .ToList();
+
         ClearChildren(topExpensesContent);
 
-        var expenses = new List<(string name, float amount)>
-        {
-            ("Payroll", 4200f),
-            ("Equipment", 1200f),
-            ("Ingredients", 580.50f),
-            ("Marketing", 450f),
-            ("Utilities", 320.75f)
-        };
-
-        foreach (var e in expenses)
+        foreach (var e in grouped)
         {
             GameObject go = Instantiate(categoryItemPrefab, topExpensesContent);
-            var nameText = go.transform.Find("CategoryNameText").GetComponent<TMP_Text>();
-            var amountText = go.transform.Find("CategoryAmountText").GetComponent<TMP_Text>();
 
-            nameText.text = e.name;
-            amountText.text = "$" + e.amount.ToString("N2");
+            go.transform.Find("CategoryNameText")
+                .GetComponent<TMP_Text>().text = e.Category;
+
+            go.transform.Find("CategoryAmountText")
+                .GetComponent<TMP_Text>().text = "$" + e.Total.ToString("N2");
         }
     }
 
-    void PopulateIncomeSources()
+    // INCOME SOURCES
+    void PopulateIncomeSources(List<TransactionModel> allTx)
     {
+        var income = allTx.Where(t => t.IsIncome && !string.IsNullOrEmpty(t.Category));
+
+        var grouped = income
+            .GroupBy(t => t.Category)
+            .Select(g => new
+            {
+                Category = g.Key,
+                Total = g.Sum(x => x.Amount)
+            })
+            .OrderByDescending(x => x.Total)
+            .ToList();
+
         ClearChildren(incomeSourcesContent);
 
-        var sources = new List<(string name, float amount)>
-        {
-            ("Sales", 7540.50f),
-            ("Catering", 850f),
-            ("Delivery Fees", 180.25f)
-        };
-
-        foreach (var s in sources)
+        foreach (var e in grouped)
         {
             GameObject go = Instantiate(categoryItemPrefab, incomeSourcesContent);
-            var nameText = go.transform.Find("CategoryNameText").GetComponent<TMP_Text>();
-            var amountText = go.transform.Find("CategoryAmountText").GetComponent<TMP_Text>();
 
-            nameText.text = s.name;
-            amountText.text = "$" + s.amount.ToString("N2");
+            go.transform.Find("CategoryNameText")
+                .GetComponent<TMP_Text>().text = e.Category;
+
+            go.transform.Find("CategoryAmountText")
+                .GetComponent<TMP_Text>().text = "$" + e.Total.ToString("N2");
         }
     }
 }

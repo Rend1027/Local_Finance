@@ -1,54 +1,40 @@
 using UnityEngine;
 using Firebase;
 using Firebase.Auth;
+using Firebase.Firestore;
+using System.Threading.Tasks;
 
 public class FirebaseInitializer : MonoBehaviour
 {
     public static FirebaseAuth Auth;
     public static FirebaseUser User;
-    private void Awake()
+    public static FirebaseFirestore DB;
+
+    private async void Start()
     {
         DontDestroyOnLoad(gameObject);
+        await InitializeFirebase();
     }
 
-
-    void Start()
+    private async Task InitializeFirebase()
     {
-        InitializeFirebase();
-    }
+        Debug.Log("🔥 Initializing Firebase…");
 
-    void InitializeFirebase()
-    {
-        FirebaseApp.CheckAndFixDependenciesAsync().ContinueWith(task =>
+        var status = await FirebaseApp.CheckAndFixDependenciesAsync();
+
+        if (status != DependencyStatus.Available)
         {
-            var status = task.Result;
+            Debug.LogError("❌ Firebase dependency error: " + status);
+            return;
+        }
 
-            if (status == DependencyStatus.Available)
-            {
-                FirebaseApp app = FirebaseApp.DefaultInstance;
+        FirebaseApp app = FirebaseApp.DefaultInstance;
 
-                // -------------------------------------------------------
-                // 🔥 FIX: Force Firebase to use the real backend
-                // -------------------------------------------------------
-                PlayerPrefs.SetString("FIREBASE_AUTH_EMULATOR_HOST", "");
-                PlayerPrefs.SetInt("USE_EMULATOR", 0);
-                Debug.Log("Emulator disabled. Using live Firebase backend.");
-                // -------------------------------------------------------
+        Auth = FirebaseAuth.DefaultInstance;
+        DB = FirebaseFirestore.DefaultInstance;
 
-                Auth = FirebaseAuth.DefaultInstance;
-
-                Debug.Log("Firebase is Ready");
-            }
-            else
-            {
-                Debug.LogError("Firebase dependency error: " + status);
-            }
-        });
-    }
-
-    // Update is called once per frame
-    void Update()
-    {
-
+        Debug.Log("🔥 Firebase READY");
+        Debug.Log("🔥 Project ID = " + app.Options.ProjectId);
+        Debug.Log("🔥 Firestore instance = " + DB);
     }
 }

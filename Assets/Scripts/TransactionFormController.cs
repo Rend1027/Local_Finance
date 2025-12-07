@@ -1,9 +1,14 @@
 using UnityEngine;
 using TMPro;
 using UnityEngine.UI;
+using Firebase.Auth;
+using Firebase.Firestore;
+using System;
+using System.Threading.Tasks;
 
 public class TransactionFormController : MonoBehaviour
 {
+
     [Header("Modal")]
     public GameObject modalOverlay;
     public GameObject transactionFormPanel;
@@ -20,27 +25,77 @@ public class TransactionFormController : MonoBehaviour
     public Transform transactionsContent;
     public GameObject transactionItemPrefab;
 
-    // Tracks which item is being edited
     private GameObject itemBeingEdited = null;
+    private string editingDocumentId = null;
 
-    // ----------------------------------------------------------
+    private TransactionPageController transactionPage;
+
+
+    FirebaseFirestore db;
+    FirebaseAuth auth;
+
+    void Start()
+    {
+        db = FirebaseFirestore.DefaultInstance;
+        auth = FirebaseAuth.DefaultInstance;
+        transactionPage = UnityEngine.Object.FindFirstObjectByType<TransactionPageController>();
+
+    }
+
     public void OpenForm()
     {
         modalOverlay.SetActive(true);
         transactionFormPanel.SetActive(true);
     }
 
+    public async void OpenFormForEdit(string documentId)
+    {
+        editingDocumentId = documentId;
+        itemBeingEdited = null; // not needed but keeps logic clean
+
+        var user = auth.CurrentUser;
+        if (user == null) return;
+
+        DocumentSnapshot doc = await db.Collection("users")
+            .Document(user.UserId)
+            .Collection("transactions")
+            .Document(documentId)
+            .GetSnapshotAsync();
+
+        if (doc.Exists)
+        {
+            var tx = doc.ConvertTo<TransactionModel>();
+
+            // Fill UI fields
+            descriptionField.text = tx.Title;
+
+            amountField.text = tx.Amount.ToString();
+
+            typeDropdown.value = tx.IsIncome ? 0 : 1;
+            categoryDropdown.value = 0; // optional, update if you store this field
+            taxToggle.isOn = false;
+
+            // Show modal
+            modalOverlay.SetActive(true);
+            transactionFormPanel.SetActive(true);
+        }
+    }
+
+
     public void CloseForm()
     {
         modalOverlay.SetActive(false);
         transactionFormPanel.SetActive(false);
-        itemBeingEdited = null; // reset edit mode
+        itemBeingEdited = null;
+        editingDocumentId = null;
     }
-    // ----------------------------------------------------------
 
-    public void AddTransaction()
+    // ADD / SAVE TRANSACTION
+    public async void AddTransaction()
     {
-        // VALIDATION ----------------------------------------------------
+        Debug.Log("AddTransaction CALLED!");
+        Debug.Log("transactionsContent = " + transactionsContent.name);
+
         if (string.IsNullOrWhiteSpace(amountField.text))
         {
             Debug.Log("Amount is required");
@@ -53,120 +108,89 @@ public class TransactionFormController : MonoBehaviour
             return;
         }
 
-        // Build data
         string typeText = typeDropdown.options[typeDropdown.value].text;
         string categoryText = categoryDropdown.options[categoryDropdown.value].text;
 
-        // ===============================================================
-        // EDIT MODE — UPDATE EXISTING ITEM
-        // ===============================================================
-        if (itemBeingEdited != null)
+        TransactionModel tx = new TransactionModel
         {
-            UpdateExistingItem(itemBeingEdited, typeText, categoryText, amount);
-            CloseForm();
+            Title = descriptionField.text,
+            Description = $"{typeText} • {categoryText}",
+            Amount = amount,
+            IsIncome = typeText == "Income",
+            Category = categoryText,
+            Timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
+        };
+
+        var user = auth.CurrentUser;
+        if (user == null)
+        {
+            Debug.LogError("User not logged in.");
             return;
         }
 
-        // ===============================================================
-        // ADD MODE — CREATE NEW ITEM
-        // ===============================================================
-        var item = Instantiate(transactionItemPrefab, transactionsContent);
+        DocumentReference txDoc;
 
-        // Fill the UI text fields
-        item.transform.Find("LeftBlock/TextBlock/Title")
-            .GetComponent<TMP_Text>().text = descriptionField.text;
-
-        item.transform.Find("LeftBlock/TextBlock/Description")
-            .GetComponent<TMP_Text>().text = $"{typeText} • {categoryText}";
-
-        item.transform.Find("RightBlock/AmountContainer/Amount")
-            .GetComponent<TMP_Text>().text =
-            (typeText == "Income" ? "+" : "-") + amount.ToString("N2");
-
-        item.transform.Find("LeftBlock/StatusDot")
-            .GetComponent<Image>().color =
-            (typeText == "Income" ? Color.green : Color.red);
-
-        // DELETE BUTTON HOOKUP ------------------------------------------
-        var deleteButton = item.transform.Find("RightBlock/Buttons/DeleteButton")
-            .GetComponent<Button>();
-
-        deleteButton.onClick.RemoveAllListeners();
-        deleteButton.onClick.AddListener(() => DeleteItem(item));
-
-        // EDIT BUTTON HOOKUP --------------------------------------------
-        var editButton = item.transform.Find("RightBlock/Buttons/EditButton")
-            .GetComponent<Button>();
-
-        editButton.onClick.RemoveAllListeners();
-        editButton.onClick.AddListener(() => EditItem(item));
-
-        // RESET FORM FIELDS --------------------------------------------
-        amountField.text = "";
-        descriptionField.text = "";
-
-        CloseForm();
-    }
-
-    // ----------------------------------------------------------
-    public void DeleteItem(GameObject item)
-    {
-        Destroy(item);
-    }
-
-    // ----------------------------------------------------------
-    public void EditItem(GameObject item)
-    {
-        itemBeingEdited = item;
-
-        // Read current UI values from the item
-        string fullDesc = item.transform.Find("LeftBlock/TextBlock/Description")
-            .GetComponent<TMP_Text>().text;
-
-        // DESCRIPTION (title)
-        descriptionField.text = item.transform.Find("LeftBlock/TextBlock/Title")
-            .GetComponent<TMP_Text>().text;
-
-        // AMOUNT
-        string amountText = item.transform.Find("RightBlock/AmountContainer/Amount")
-            .GetComponent<TMP_Text>().text;
-
-        amountField.text = amountText.Replace("+", "").Replace("-", "");
-
-        // TYPE (Income / Expense)
-        if (fullDesc.Contains("Income")) typeDropdown.value = 0;
-        if (fullDesc.Contains("Expense")) typeDropdown.value = 1;
-
-        // CATEGORY
-        string[] parts = fullDesc.Split('•');
-        if (parts.Length > 1)
+        // UPDATE EXISTING TRANSACTION
+        if (itemBeingEdited != null && editingDocumentId != null)
         {
-            string cat = parts[1].Trim();
-            int i = categoryDropdown.options.FindIndex(o => o.text == cat);
-            if (i != -1) categoryDropdown.value = i;
+            txDoc = db.Collection("users")
+                      .Document(user.UserId)
+                      .Collection("transactions")
+                      .Document(editingDocumentId);
+
+            await txDoc.SetAsync(tx);
+            Debug.Log("Transaction updated!");
+        }
+        else
+        {
+
+            try
+            {
+                // ADD NEW TRANSACTION
+                txDoc = await db.Collection("users")
+                                .Document(user.UserId)
+                                .Collection("transactions")
+                                .AddAsync(tx);
+
+                editingDocumentId = txDoc.Id;
+                Debug.Log("🔥 Transaction ADDED to Firestore with ID: " + txDoc.Id);
+
+
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError(ex);
+            }
+            finally
+            {
+
+                // 🔄 Refresh Transaction Page
+                if (transactionPage != null)
+                {
+                    transactionPage.RefreshPage();
+                }
+                Debug.Log("🔥 Closing form...");
+                CloseForm();
+
+            }
+
         }
 
-        // DATE (we can store this later when you add date logic)
-        // For now just leave dateField as-is
-
-        OpenForm(); // show form with pre-filled values
     }
 
-    // ----------------------------------------------------------
-    private void UpdateExistingItem(GameObject item, string typeText, string categoryText, float amount)
+
+    // DELETE TRANSACTION
+    public async void DeleteTransaction(string documentId)
     {
-        item.transform.Find("LeftBlock/TextBlock/Title")
-            .GetComponent<TMP_Text>().text = descriptionField.text;
+        var user = auth.CurrentUser;
+        if (user == null) return;
 
-        item.transform.Find("LeftBlock/TextBlock/Description")
-            .GetComponent<TMP_Text>().text = $"{typeText} • {categoryText}";
+        await db.Collection("users")
+                .Document(user.UserId)
+                .Collection("transactions")
+                .Document(documentId)
+                .DeleteAsync();
 
-        item.transform.Find("RightBlock/AmountContainer/Amount")
-            .GetComponent<TMP_Text>().text =
-            (typeText == "Income" ? "+" : "-") + amount.ToString("N2");
-
-        item.transform.Find("LeftBlock/StatusDot")
-            .GetComponent<Image>().color =
-            (typeText == "Income" ? Color.green : Color.red);
+        Debug.Log("Transaction deleted!");
     }
 }

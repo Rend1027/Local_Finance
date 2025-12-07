@@ -1,12 +1,14 @@
 using System;
+using Firebase.Firestore;
 
 [Serializable]
+[FirestoreData]
 public class TransactionModel
 {
-    public string type;        // Income or Expense
-    public string date;        // MM/DD/YYYY
-    public string category;    // Sales, Food, etc
-    public float amount;       // Always positive
-    public string description; // Text box
-    public bool taxDeductible; // Checkbox
+    [FirestoreProperty] public string Title { get; set; }
+    [FirestoreProperty] public string Description { get; set; }
+    [FirestoreProperty] public float Amount { get; set; }
+    [FirestoreProperty] public bool IsIncome { get; set; }
+    [FirestoreProperty] public long Timestamp { get; set; }
+    [FirestoreProperty] public string Category { get; set; }
 }
